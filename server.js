@@ -9,7 +9,11 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 
-app.use(cors()); // Lets React talk to this server
+app.use(cors({
+    origin: ["https://nextgen-builds-ai.vercel.app", "http://localhost:5173"], 
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+}));
 app.use(express.json()); // Lets us read JSON data from the frontend
 
 // Local Database Connection Setup
