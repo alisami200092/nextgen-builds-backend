@@ -9,9 +9,25 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 
+// Define your explicit allowed origins
+const allowedOrigins = [
+  "https://nextgen-builds-ai.vercel.app", 
+  "http://localhost:5173"
+];
+
 app.use(cors({
-    origin: ["https://nextgen-builds-ai.vercel.app", "http://localhost:5173"], 
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    origin: function (origin, callback) {
+        // Allow server-to-server requests or tools like Postman (which have no origin)
+        if (!origin) return callback(null, true);
+        
+        // Check if the origin matches our explicit list OR belongs to a Vercel deployment
+        if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+            return callback(null, true);
+        } else {
+            return callback(new Error('Blocked by security system CORS Matrix'), false);
+        }
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true
 }));
 
