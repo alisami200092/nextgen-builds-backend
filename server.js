@@ -9,38 +9,27 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 
-// Define your explicit allowed origins
+// Define explicit allowed origins
 const allowedOrigins = [
-  "https://nextgen-builds-ai.vercel.app", 
-  "http://localhost:5173"
+    "https://nextgen-builds-ai.vercel.app", 
+    "http://localhost:5173"
 ];
 
+// Bulletproof CORS policy that accepts staging environments without throwing runtime crashes
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow server-to-server requests or tools like Postman (which have no origin)
-        if (!origin) return callback(null, true);
-        
-        // Check if the origin matches our explicit list OR belongs to a Vercel deployment
-        if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
             return callback(null, true);
         } else {
-            return callback(new Error('Blocked by security system CORS Matrix'), false);
+            return callback(null, false); 
         }
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 app.use(express.json()); // Lets us read JSON data from the frontend
-
-// Local Database Connection Setup
-// const pool = new Pool({
-//     user: process.env.DB_USER,
-//     password: process.env.DB_PASSWORD,
-//     host: process.env.DB_HOST,
-//     port: process.env.DB_PORT,
-//     database: process.env.DB_DATABASE
-// });
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -49,21 +38,23 @@ const pool = new Pool({
     }
 });
 
-//Forgot password setup
+// Production-ready SMTP mail routing over safe TLS channels
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // Upgrades the transmission channel using safe STARTTLS protocols
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
 });
 
 transporter.verify((error, success) => {
-  if (error) {
-    console.log("❌ Email System Error:", error.message);
-  } else {
-    console.log("✅ Email System: Ready to transmit recovery links");
-  }
+    if (error) {
+        console.log("❌ Email System Error:", error.message);
+    } else {
+        console.log("✅ Email System: Ready to transmit recovery links");
+    }
 });
 
 // ==========================================
@@ -85,8 +76,8 @@ app.post('/api/signup', async (req, res) => {
         const token = jwt.sign({ id: newUser.rows[0].id }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.json({ token, user: newUser.rows[0] });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        console.error("Database Write Error:", err.message);
+        res.status(500).json({ error: "Database execution failed inside the neural matrix." });
     }
 });
 
@@ -105,8 +96,8 @@ app.post('/api/login', async (req, res) => {
         const token = jwt.sign({ id: user.rows[0].id }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.json({ token, user: { id: user.rows[0].id, username: user.rows[0].username, email: user.rows[0].email } });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        console.error("Database Read Error:", err.message);
+        res.status(500).json({ error: "Database authentication failed to synchronize." });
     }
 });
 
@@ -128,7 +119,7 @@ app.post('/api/forgot-password', async (req, res) => {
 
         // 2. Prepare the Email Content
         const mailOptions = {
-            from: `"NextGen Builds" <${process.env.EMAIL_USER}>`, // Uses your .env email
+            from: `"NextGen Builds" <${process.env.EMAIL_USER}>`, 
             to: email,
             subject: 'Neural Link: Password Recovery Request',
             html: `
@@ -146,7 +137,7 @@ app.post('/api/forgot-password', async (req, res) => {
                     </p>
 
                     <div style="text-align: center; margin: 40px 0;">
-                        <a href="http://localhost:5173/reset-password?email=${encodeURIComponent(email)}" 
+                        <a href="https://nextgen-builds-ai.vercel.app/reset-password?email=${encodeURIComponent(email)}" 
                            style="background: linear-gradient(90deg, #06b6d4 0%, #3b82f6 100%); color: #ffffff; padding: 16px 32px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 14px; box-shadow: 0 4px 15px rgba(6, 182, 212, 0.3);">
                            RESET NEURAL PASSKEY
                         </a>
@@ -162,7 +153,6 @@ app.post('/api/forgot-password', async (req, res) => {
 
         // 3. Send the Mail
         await transporter.sendMail(mailOptions);
-
         res.json({ message: "Recovery credentials transmitted. Check your inbox." });
 
     } catch (err) {
@@ -177,15 +167,12 @@ app.post('/api/forgot-password', async (req, res) => {
 app.post('/api/build/enthusiast', async (req, res) => {
     try {
         const { budget, cpuBrand, gpuBrand } = req.body;
-
-        // 🚀 Fix: Ensure whole number for PostgreSQL bigint and apply 10% high-end flex
         const searchBudget = Math.round(budget >= 2000 ? budget * 1.10 : budget);
 
         let query = `SELECT * FROM components WHERE total_price <= $1`;
         let values = [searchBudget]; 
         let paramIndex = 2;
 
-        // Strict socket compatibility (Prevents Intel CPUs on AMD boards and vice-versa)
         query += `
             AND NOT (cpu ILIKE '%Ryzen%' AND motherboard ~* '(Z790|Z690|Z590|B760|B660|H610|Z890|B860)')
             AND NOT ((cpu ILIKE '%Intel%' OR cpu ILIKE '%Core%') AND motherboard ~* '(X870|X670|B650|A620|X570|B550|B450)')
@@ -225,8 +212,6 @@ app.post('/api/build/enthusiast', async (req, res) => {
 app.post('/api/build/novice', async (req, res) => {
     try {
         const { budget } = req.body;
-
-        // 🚀 Fix: Added Math.round and 10% Flex so Novice users can also see 50-series builds
         const searchBudget = Math.round(budget >= 2000 ? budget * 1.10 : budget);
 
         let query = `
@@ -287,12 +272,10 @@ app.post('/api/predict-fps', async (req, res) => {
                 if (matrixData.error) return res.status(500).json({ error: matrixData.error });
 
                 res.json({ ai_matrix: matrixData });
-
             } catch (err) {
                 res.status(500).json({ error: "ML Bridge JSON Error" });
             }
         });
-
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Server Error: ML bridge failed." });
@@ -319,11 +302,10 @@ const authenticateToken = (req, res, next) => {
 // 7. SAVED BUILDS 
 // ==========================================
 
-// --- SAVE A NEW BUILD ---
 app.post('/api/builds/save', authenticateToken, async (req, res) => {
     try {
         const { build_name, total_price, cpu, gpu, motherboard, ram, psu, chassis, image_url } = req.body;
-        const userId = req.user.id; // Pulled securely from the token
+        const userId = req.user.id;
 
         const newBuild = await pool.query(
             `INSERT INTO saved_builds 
@@ -339,17 +321,13 @@ app.post('/api/builds/save', authenticateToken, async (req, res) => {
     }
 });
 
-// --- GET USER'S SAVED BUILDS ---
 app.get('/api/builds/my-hangar', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        
-        // Fetch builds for this specific user, newest first
         const builds = await pool.query(
             'SELECT * FROM saved_builds WHERE user_id = $1 ORDER BY saved_at DESC', 
             [userId]
         );
-
         res.json(builds.rows);
     } catch (err) {
         console.error(err);
@@ -357,13 +335,11 @@ app.get('/api/builds/my-hangar', authenticateToken, async (req, res) => {
     }
 });
 
-// --- DELETE A BUILD ---
 app.delete('/api/builds/:id', authenticateToken, async (req, res) => {
     try {
         const buildId = req.params.id;
         const userId = req.user.id;
 
-        // The "AND user_id = $2" ensures a hacker can't delete someone else's build!
         const deleteQuery = await pool.query(
             'DELETE FROM saved_builds WHERE id = $1 AND user_id = $2 RETURNING *', 
             [buildId, userId]
@@ -372,11 +348,10 @@ app.delete('/api/builds/:id', authenticateToken, async (req, res) => {
         if (deleteQuery.rows.length === 0) {
              return res.status(404).json({ error: "Build not found or not authorized to delete." });
         }
-        
         res.json({ message: "Build deleted from hangar." });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Failed to delete build." });
+        res.status(500).json({ error: "Failed to delete build from system memory." });
     }
 });
 
@@ -387,11 +362,9 @@ app.post('/api/reset-password', async (req, res) => {
     const { email, newPassword } = req.body;
 
     try {
-        // 1. Hash the new password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-        // 2. Update the database
         const result = await pool.query(
             'UPDATE users SET password_hash = $1 WHERE email = $2 RETURNING id',
             [hashedPassword, email]
@@ -400,10 +373,7 @@ app.post('/api/reset-password', async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ error: "User record not found in the neural matrix." });
         }
-
-        // 3. Send success response as JSON (crucial to avoid the character error!)
         res.json({ message: "Neural passkey updated successfully!" });
-
     } catch (err) {
         console.error("❌ Reset DB Error:", err);
         res.status(500).json({ error: "Database synchronization failed." });
@@ -412,7 +382,6 @@ app.post('/api/reset-password', async (req, res) => {
 
 // Start the server
 const PORT = process.env.PORT || 5000;
-// We add '0.0.0.0' so Railway can route traffic to your app
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 NextGen Backend running on port ${PORT}`);
 });
