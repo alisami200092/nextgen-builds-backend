@@ -12,13 +12,20 @@ const app = express();
 app.use(cors()); // Lets React talk to this server
 app.use(express.json()); // Lets us read JSON data from the frontend
 
-// Database Connection Setup
+// Local Database Connection Setup
+// const pool = new Pool({
+//     user: process.env.DB_USER,
+//     password: process.env.DB_PASSWORD,
+//     host: process.env.DB_HOST,
+//     port: process.env.DB_PORT,
+//     database: process.env.DB_DATABASE
+// });
+
 const pool = new Pool({
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    database: process.env.DB_DATABASE
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false 
+    }
 });
 
 //Forgot password setup
@@ -384,6 +391,7 @@ app.post('/api/reset-password', async (req, res) => {
 
 // Start the server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+// We add '0.0.0.0' so Railway can route traffic to your app
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 NextGen Backend running on port ${PORT}`);
 });
