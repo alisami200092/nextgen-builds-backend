@@ -14,6 +14,7 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
 }));
+
 app.use(express.json()); // Lets us read JSON data from the frontend
 
 // Local Database Connection Setup
