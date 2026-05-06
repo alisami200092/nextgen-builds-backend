@@ -253,7 +253,10 @@ app.post('/api/predict-fps', async (req, res) => {
             directx = 'DX12'
         } = req.body;
 
-        const pythonProcess = spawn('python', [
+        // 🚀 Auto-detect Windows (Local) vs Linux (Railway Cloud)
+        const pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
+
+        const pythonProcess = spawn(pythonCommand, [
             'predict_fps.py',
             cpuCores, cpuThreads, cpuBoost, cpuL3,
             gpuVram, gpuBoost, gpuShaders,
@@ -263,19 +266,37 @@ app.post('/api/predict-fps', async (req, res) => {
             upscaling, frameGen, engine, directx
         ]);
 
+        // 🛡️ Prevent the whole server from crashing if Python fails
+        pythonProcess.on('error', (error) => {
+            console.error("❌ Python ML Engine failed to start:", error);
+            if (!res.headersSent) {
+                return res.status(500).json({ error: "AI Prediction Engine offline." });
+            }
+        });
+
         let rawOutput = '';
         pythonProcess.stdout.on('data', (data) => { rawOutput += data.toString(); });
+        
+        // 🚨 Catch Python syntax or import errors and print them to Railway logs
+        pythonProcess.stderr.on('data', (data) => {
+            console.error("🐍 Python Script Error:", data.toString());
+        });
 
         pythonProcess.on('close', (code) => {
             try {
+                // If Python failed, rawOutput might be empty or plain text, which breaks JSON.parse
+                if (!rawOutput) return res.status(500).json({ error: "Python script returned no data." });
+                
                 const matrixData = JSON.parse(rawOutput.trim());
                 if (matrixData.error) return res.status(500).json({ error: matrixData.error });
 
                 res.json({ ai_matrix: matrixData });
             } catch (err) {
+                console.error("Raw Python Output causing JSON error:", rawOutput);
                 res.status(500).json({ error: "ML Bridge JSON Error" });
             }
         });
+
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Server Error: ML bridge failed." });
